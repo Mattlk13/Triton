@@ -637,7 +637,7 @@ namespace triton {
 
 
       triton::uint64 x86Semantics::alignAddStack_s(triton::arch::Instruction& inst, triton::uint32 delta) {
-        auto dst = triton::arch::OperandWrapper(TRITON_X86_REG_SP.getParent());
+        auto dst = triton::arch::OperandWrapper(this->architecture->getParentRegister(triton::arch::x86::ID_REG_SP));
 
         /* Create symbolic operands */
         auto op1 = this->symbolicEngine->buildSymbolicOperand(inst, dst);
