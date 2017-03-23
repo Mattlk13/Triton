@@ -105,6 +105,12 @@ namespace triton {
         //! Clears the architecture states (registers and memory).
         void clearArchitecture(void);
 
+        //! Returns the parent register.
+        triton::arch::Register getParentRegister(triton::uint32 regId) const;
+
+        //! Returns a register.
+        triton::arch::Register getRegister(triton::uint32 regId) const;
+
         //! Returns all information about the register.
         triton::arch::RegisterSpecification getRegisterSpecification(triton::uint32 regId) const;
 

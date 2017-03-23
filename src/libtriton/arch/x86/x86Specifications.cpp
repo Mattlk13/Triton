@@ -452,6 +452,26 @@ namespace triton {
       }
 
 
+      triton::arch::Register x86Specifications::getX86ParentRegister(triton::uint32 arch, triton::uint32 regId) const {
+        return this->getX86Register(arch, this->getX86RegisterSpecification(arch, regId).getParentId());
+      }
+
+
+      triton::arch::Register x86Specifications::getX86Register(triton::uint32 arch, triton::uint32 regId) const {
+        triton::arch::Register reg; triton::arch::RegisterSpecification regInfo;
+
+        regInfo = this->getX86RegisterSpecification(arch, regId);
+
+        reg.setId((regInfo.getName() == "unknown") ? 0 : regId);
+        reg.setName(regInfo.getName());
+        reg.setParent(regInfo.getParentId());
+        reg.setHigh(regInfo.getHigh());
+        reg.setLow(regInfo.getLow());
+
+        return reg;
+      }
+
+
       triton::arch::RegisterSpecification x86Specifications::getX86RegisterSpecification(triton::uint32 arch, triton::uint32 regId) const {
         triton::arch::RegisterSpecification ret;
 

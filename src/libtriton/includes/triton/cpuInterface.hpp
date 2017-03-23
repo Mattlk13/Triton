@@ -65,6 +65,12 @@ namespace triton {
         //! Returns the number of registers according to the CPU architecture.
         virtual triton::uint32 numberOfRegisters(void) const = 0;
 
+        //! Returns the parent register.
+        virtual triton::arch::Register getParentRegister(triton::uint32 regId) const = 0;
+
+        //! Returns a register.
+        virtual triton::arch::Register getRegister(triton::uint32 regId) const = 0;
+
         //! Returns all information about a register id.
         virtual triton::arch::RegisterSpecification getRegisterSpecification(triton::uint32 regId) const = 0;
 

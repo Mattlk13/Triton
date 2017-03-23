@@ -135,6 +135,26 @@ namespace triton {
     }
 
 
+    triton::arch::Register Architecture::getRegister(triton::uint32 regId) const {
+      triton::arch::Register ret;
+
+      if (this->cpu)
+        ret = this->cpu->getRegister(regId);
+
+      return ret;
+    }
+
+
+    triton::arch::Register Architecture::getParentRegister(triton::uint32 regId) const {
+      triton::arch::Register ret;
+
+      if (this->cpu)
+        ret = this->cpu->getParentRegister(regId);
+
+      return ret;
+    }
+
+
     triton::arch::RegisterSpecification Architecture::getRegisterSpecification(triton::uint32 regId) const {
       triton::arch::RegisterSpecification ret;
 

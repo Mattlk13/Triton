@@ -270,6 +270,12 @@ namespace triton {
           //! Destructor.
           virtual ~x86Specifications();
 
+          //! Returns the parent register from its child's ID according to the arch (32 or 64-bits).
+          triton::arch::Register getX86ParentRegister(triton::uint32 arch, triton::uint32 regId) const;
+
+          //! Returns a register from its ID according to the arch (32 or 64-bits).
+          triton::arch::Register getX86Register(triton::uint32 arch, triton::uint32 regId) const;
+
           //! Returns all specifications about a register from its ID according to the arch (32 or 64-bits).
           triton::arch::RegisterSpecification getX86RegisterSpecification(triton::uint32 arch, triton::uint32 regId) const;
 

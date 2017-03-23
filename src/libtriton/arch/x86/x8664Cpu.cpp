@@ -580,6 +580,16 @@ namespace triton {
       }
 
 
+      triton::arch::Register x8664Cpu::getParentRegister(triton::uint32 regId) const {
+        return this->getX86ParentRegister(triton::arch::ARCH_X86_64, regId);
+      }
+
+
+      triton::arch::Register x8664Cpu::getRegister(triton::uint32 regId) const {
+        return this->getX86Register(triton::arch::ARCH_X86_64, regId);
+      }
+
+
       triton::arch::RegisterSpecification x8664Cpu::getRegisterSpecification(triton::uint32 regId) const {
         return this->getX86RegisterSpecification(triton::arch::ARCH_X86_64, regId);
       }
