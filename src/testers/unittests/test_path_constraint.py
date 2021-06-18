@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # coding: utf-8
 """Test Path Constraint."""
 
@@ -69,6 +69,8 @@ class TestPathConstraint(unittest.TestCase):
         ast = self.ctx.getAstContext()
         pc  = self.ctx.getPathPredicate()
         opc = pc
+
+        self.ctx.setMode(MODE.PC_TRACKING_SYMBOLIC, False)
 
         self.assertEqual(str(pc), "(and (= (_ bv1 1) (_ bv1 1)) (= ref!35 (_ bv1 1)))")
         self.ctx.pushPathConstraint(ast.equal(ast.bvtrue(), ast.bvtrue()))

@@ -111,6 +111,13 @@ namespace triton {
         }
       }
 
+
+      void SolverEngine::setMemoryLimit(triton::uint32 limit) {
+        if (this->solver) {
+          this->solver->setMemoryLimit(limit);
+        }
+      }
+
     };
   };
 };

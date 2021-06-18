@@ -756,46 +756,54 @@ namespace triton {
 
 
       static PyObject* AstNode_richcompare(PyObject* self, PyObject* other, int op) {
+        triton::ast::SharedAbstractNode node1 = PyAstNode_AsAstNode(self);
+        triton::ast::SharedAbstractNode node2 = nullptr;
         PyObject* result = nullptr;
 
         if (PyLong_Check(other) || PyInt_Check(other)) {
           triton::uint512 value = PyLong_AsUint512(other);
           triton::uint32 size   = PyAstNode_AsAstNode(self)->getBitvectorSize();
-          if (size)
-            other = PyAstNode(PyAstNode_AsAstNode(self)->getContext()->bv(value, size));
-        }
-
-        if (!PyAstNode_Check(other)) {
-          result = Py_NotImplemented;
-        }
-
-        else {
-          auto node1 = PyAstNode_AsAstNode(self);
-          auto node2 = PyAstNode_AsAstNode(other);
-
-          switch (op) {
-            case Py_LT:
-                result = PyAstNode(node1->getContext()->bvult(node1, node2));
-                break;
-            case Py_LE:
-                result = PyAstNode(node1->getContext()->bvule(node1, node2));
-                break;
-            case Py_EQ:
-                result = PyAstNode(node1->getContext()->equal(node1, node2));
-                break;
-            case Py_NE:
-                result = PyAstNode(node1->getContext()->lnot(node1->getContext()->equal(node1, node2)));
-                break;
-            case Py_GT:
-                result = PyAstNode(node1->getContext()->bvugt(node1, node2));
-                break;
-            case Py_GE:
-                result = PyAstNode(node1->getContext()->bvuge(node1, node2));
-                break;
+          if (size) {
+            node2 = PyAstNode_AsAstNode(self)->getContext()->bv(value, size);
           }
         }
 
-        Py_INCREF(result);
+        else if (PyAstNode_Check(other)) {
+          node2 = PyAstNode_AsAstNode(other);
+        }
+
+        else {
+          result = Py_NotImplemented;
+          Py_INCREF(result);
+          return result;
+        }
+
+        switch (op) {
+          case Py_LT:
+              result = PyAstNode(node1->getContext()->bvult(node1, node2));
+              break;
+          case Py_LE:
+              result = PyAstNode(node1->getContext()->bvule(node1, node2));
+              break;
+          case Py_EQ:
+              result = PyAstNode(node1->getContext()->equal(node1, node2));
+              break;
+          case Py_NE:
+              result = PyAstNode(node1->getContext()->lnot(node1->getContext()->equal(node1, node2)));
+              break;
+          case Py_GT:
+              result = PyAstNode(node1->getContext()->bvugt(node1, node2));
+              break;
+          case Py_GE:
+              result = PyAstNode(node1->getContext()->bvuge(node1, node2));
+              break;
+          default:
+            result = Py_NotImplemented;
+            Py_INCREF(result);
+            Py_DECREF(other);
+            return result;
+        }
+
         return result;
       }
 
@@ -945,14 +953,16 @@ namespace triton {
         0,                                          /* tp_weaklist */
         0,                                          /* tp_del */
         #if IS_PY3
-        0,                                          /* tp_version_tag */
-        0,                                          /* tp_finalize */
-        #if IS_PY3_8
-        0,                                          /* tp_vectorcall */
-        0,                                          /* bpo-37250: kept for backwards compatibility in CPython 3.8 only */
-        #endif
+          0,                                        /* tp_version_tag */
+          0,                                        /* tp_finalize */
+          #if IS_PY3_8
+            0,                                      /* tp_vectorcall */
+            #if !IS_PY3_9
+              0,                                    /* bpo-37250: kept for backwards compatibility in CPython 3.8 only */
+            #endif
+          #endif
         #else
-        0                                           /* tp_version_tag */
+          0                                         /* tp_version_tag */
         #endif
       };
 

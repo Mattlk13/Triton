@@ -20,8 +20,9 @@ namespace triton {
 
 
       PathConstraint::PathConstraint(const PathConstraint &other) {
-        this->branches = other.branches;
-        this->tid = other.tid;
+        this->branches  = other.branches;
+        this->comment   = other.comment;
+        this->tid       = other.tid;
       }
 
 
@@ -32,8 +33,9 @@ namespace triton {
 
 
       PathConstraint& PathConstraint::operator=(const PathConstraint &other) {
-        this->branches = other.branches;
-        this->tid = other.tid;
+        this->branches  = other.branches;
+        this->comment   = other.comment;
+        this->tid       = other.tid;
         return *this;
       }
 
@@ -84,6 +86,16 @@ namespace triton {
 
       void PathConstraint::setThreadId(triton::uint32 tid) {
         this->tid = tid;
+      }
+
+
+      const std::string& PathConstraint::getComment(void) const {
+        return this->comment;
+      }
+
+
+      void PathConstraint::setComment(const std::string& comment) {
+        this->comment = comment;
       }
 
     }; /* symbolic namespace */

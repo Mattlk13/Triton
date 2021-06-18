@@ -7,6 +7,7 @@
 
 #include <cstring>
 #include <new>
+#include <set>
 
 #include <triton/exceptions.hpp>
 #include <triton/coreUtils.hpp>
@@ -173,6 +174,15 @@ namespace triton {
 
       /* Removes an aligned memory */
       void SymbolicEngine::removeAlignedMemory(triton::uint64 address, triton::uint32 size) {
+        /*
+         * Avoid accessing the alignedMemoryReference array when empty. This usually happens when
+         * you initialize the symbolic engine and concretize whole sections of an executable using
+         * setConcreteMemoryValue. No symbolic memory has been created yet but this function will
+         * still try to rougly erase (size * 7) elements.
+         */
+        if (this->alignedMemoryReference.empty())
+          return;
+
         /* Remove overloaded positive ranges */
         for (triton::uint32 index = 0; index < size; index++) {
           this->alignedMemoryReference.erase(std::make_pair(address+index, triton::size::byte));
@@ -261,6 +271,11 @@ namespace triton {
 
 
       void SymbolicEngine::setImplicitReadRegisterFromEffectiveAddress(triton::arch::Instruction& inst, const triton::arch::MemoryAccess& mem) {
+        /* Set implicit read of the segment register (LEA) */
+        if (this->architecture->isRegisterValid(mem.getConstSegmentRegister())) {
+          (void)this->getRegisterAst(inst, mem.getConstSegmentRegister());
+        }
+
         /* Set implicit read of the base register (LEA) */
         if (this->architecture->isRegisterValid(mem.getConstBaseRegister())) {
           (void)this->getRegisterAst(inst, mem.getConstBaseRegister());
@@ -270,6 +285,17 @@ namespace triton {
         if (this->architecture->isRegisterValid(mem.getConstIndexRegister())) {
           (void)this->getRegisterAst(inst, mem.getConstIndexRegister());
         }
+      }
+
+
+      const SharedSymbolicExpression& SymbolicEngine::addSymbolicExpressions(triton::arch::Instruction& inst, triton::usize id) const {
+        /* See #1002: There may be multiple new symbolic expressions when AST_OPTIMIZATIONS are on */
+        for (triton::usize i = id; i != this->uniqueSymExprId; ++i) {
+          if (this->isSymbolicExpressionExists(i)) {
+            inst.addSymbolicExpression(this->getSymbolicExpression(i));
+          }
+        }
+        return inst.symbolicExpressions.back();
       }
 
 
@@ -451,47 +477,49 @@ namespace triton {
 
 
       /* Prints symbolic expression with used references and symbolic variables */
-      std::ostream& SymbolicEngine::printSlicedExpressions(std::ostream& stream, const triton::engines::symbolic::SharedSymbolicExpression& expr, bool assert_) {
-        auto symVars = this->getSymbolicVariables();
+      std::ostream& SymbolicEngine::printSlicedExpressions(std::ostream& stream, const SharedSymbolicExpression& expr, bool assert_) {
+        /* Collect SSA form */
         auto ssa = this->sliceExpressions(expr);
-
-        std::vector<usize> ids;
-        ids.reserve(std::max(symVars.size(), ssa.size()));
-        for (const auto& symVar : symVars) {
-          ids.push_back(symVar.first);
+        std::vector<triton::usize> symExprs;
+        for (const auto& se : ssa) {
+          symExprs.push_back(se.first);
         }
 
-        std::sort(ids.begin(), ids.end());
-        for (const auto& id : ids) {
-          auto n = this->astCtxt->declare(this->astCtxt->variable(symVars[id]));
+        /* Collect used symbolic variables */
+        std::map<triton::usize, SharedSymbolicVariable> symVars;
+        for (const auto& n : ast::search(expr->getAst(), ast::VARIABLE_NODE)) {
+          auto var = reinterpret_cast<ast::VariableNode*>(n.get())->getSymbolicVariable();
+          symVars[var->getId()] = var;
+        }
+
+        /* Print symbolic variables */
+        for (const auto& var : symVars) {
+          auto n = this->astCtxt->declare(this->astCtxt->variable(var.second));
           this->astCtxt->print(stream, n.get());
           stream << std::endl;
         }
 
-        ids.clear();
-        for (const auto& se : ssa) {
-          ids.push_back(se.first);
-        }
-
-        std::sort(ids.begin(), ids.end());
+        /* Sort SSA */
+        std::sort(symExprs.begin(), symExprs.end());
         if (assert_) {
-          ids.pop_back();
+          symExprs.pop_back();
         }
 
-        for (const auto& id : ids) {
+        /* Print symbolic expressions */
+        for (const auto& id : symExprs) {
           stream << ssa[id]->getFormattedExpression() << std::endl;
         }
 
         if (assert_) {
           /* Print conjuncts in separate asserts */
-          std::vector<triton::ast::SharedAbstractNode> exprs;
-          std::vector<triton::ast::SharedAbstractNode> wl{expr->getAst()};
+          std::vector<ast::SharedAbstractNode> exprs;
+          std::vector<ast::SharedAbstractNode> wl{expr->getAst()};
 
           while (!wl.empty()) {
             auto n = wl.back();
             wl.pop_back();
 
-            if (n->getType() != triton::ast::LAND_NODE) {
+            if (n->getType() != ast::LAND_NODE) {
               exprs.push_back(n);
               continue;
             }
@@ -790,28 +818,28 @@ namespace triton {
 
         switch (extend.getExtendType()) {
           case triton::arch::arm::ID_EXTEND_UXTB:
-            return this->astCtxt->zx(size, this->astCtxt->extract(7, 0, node));
+            return this->astCtxt->zx(size, this->astCtxt->bvshl(this->astCtxt->extract(7, 0, node), this->astCtxt->bv(extend.getShiftImmediate(), 8)));
 
           case triton::arch::arm::ID_EXTEND_UXTH:
-            return this->astCtxt->zx(size, this->astCtxt->extract(15, 0, node));
+            return this->astCtxt->zx(size, this->astCtxt->bvshl(this->astCtxt->extract(15, 0, node), this->astCtxt->bv(extend.getShiftImmediate(), 16)));
 
           case triton::arch::arm::ID_EXTEND_UXTW:
-            return this->astCtxt->zx(size, this->astCtxt->extract(31, 0, node));
+            return this->astCtxt->zx(size, this->astCtxt->bvshl(this->astCtxt->extract(31, 0, node), this->astCtxt->bv(extend.getShiftImmediate(), 32)));
 
           case triton::arch::arm::ID_EXTEND_UXTX:
-            return this->astCtxt->zx(size, this->astCtxt->extract(63, 0, node));
+            return this->astCtxt->zx(size, this->astCtxt->bvshl(this->astCtxt->extract(63, 0, node), this->astCtxt->bv(extend.getShiftImmediate(), 64)));
 
           case triton::arch::arm::ID_EXTEND_SXTB:
-            return this->astCtxt->sx(size, this->astCtxt->extract(7, 0, node));
+            return this->astCtxt->sx(size, this->astCtxt->bvshl(this->astCtxt->extract(7, 0, node), this->astCtxt->bv(extend.getShiftImmediate(), 8)));
 
           case triton::arch::arm::ID_EXTEND_SXTH:
-            return this->astCtxt->sx(size, this->astCtxt->extract(15, 0, node));
+            return this->astCtxt->sx(size, this->astCtxt->bvshl(this->astCtxt->extract(15, 0, node), this->astCtxt->bv(extend.getShiftImmediate(), 16)));
 
           case triton::arch::arm::ID_EXTEND_SXTW:
-            return this->astCtxt->sx(size, this->astCtxt->extract(31, 0, node));
+            return this->astCtxt->sx(size, this->astCtxt->bvshl(this->astCtxt->extract(31, 0, node), this->astCtxt->bv(extend.getShiftImmediate(), 32)));
 
           case triton::arch::arm::ID_EXTEND_SXTX:
-            return this->astCtxt->sx(size, this->astCtxt->extract(63, 0, node));
+            return this->astCtxt->sx(size, this->astCtxt->bvshl(this->astCtxt->extract(63, 0, node), this->astCtxt->bv(extend.getShiftImmediate(), 64)));
 
           default:
             throw triton::exceptions::SymbolicEngine("SymbolicEngine::getExtendAst(): Invalid extend operand.");
@@ -946,10 +974,14 @@ namespace triton {
         SharedSymbolicExpression se         = nullptr;
         triton::uint64 address              = mem.getAddress();
         triton::uint32 writeSize            = mem.getSize();
+        triton::usize id                    = this->uniqueSymExprId;
+
+        std::stringstream s;
+        s << comment << (comment.empty() ? "" : " - ") << inst;
 
         /* Record the aligned memory for a symbolic optimization */
         if (this->modes->isModeEnabled(triton::modes::ALIGNED_MEMORY)) {
-          const SharedSymbolicExpression& aligned = this->newSymbolicExpression(node, MEMORY_EXPRESSION, "Aligned Byte reference - " + comment);
+          const SharedSymbolicExpression& aligned = this->newSymbolicExpression(node, MEMORY_EXPRESSION, "Aligned Byte reference - " + s.str());
           this->addAlignedMemory(address, writeSize, aligned);
         }
 
@@ -964,13 +996,11 @@ namespace triton {
           /* Extract each byte of the memory */
           tmp = this->astCtxt->extract(high, low, node);
           /* Assign each byte to a new symbolic expression */
-          se = this->newSymbolicExpression(tmp, MEMORY_EXPRESSION, "Byte reference - " + comment);
+          se = this->newSymbolicExpression(tmp, MEMORY_EXPRESSION, "Byte reference - " + s.str());
           /* Set the origin of the symbolic expression */
           se->setOriginMemory(triton::arch::MemoryAccess(((address + writeSize) - 1), triton::size::byte));
           /* ret is the for the final expression */
           ret.push_back(tmp);
-          /* add the symbolic expression to the instruction */
-          inst.addSymbolicExpression(se);
           /* Assign memory with little endian */
           this->addMemoryReference((address + writeSize) - 1, se);
           /* continue */
@@ -987,8 +1017,7 @@ namespace triton {
         if (ret.size() == 1) {
           /* Synchronize the concrete state */
           this->architecture->setConcreteMemoryValue(mem, tmp->evaluate());
-          /* It will return se */
-          return inst.symbolicExpressions.back();
+          return this->addSymbolicExpressions(inst, id);
         }
 
         /* Otherwise, we return the concatenation of all symbolic expressions */
@@ -997,10 +1026,10 @@ namespace triton {
         /* Synchronize the concrete state */
         this->architecture->setConcreteMemoryValue(mem, tmp->evaluate());
 
-        se = this->newSymbolicExpression(tmp, MEMORY_EXPRESSION, "Temporary concatenation reference - " + comment);
+        se = this->newSymbolicExpression(tmp, MEMORY_EXPRESSION, "Temporary concatenation reference - " + s.str());
         se->setOriginMemory(triton::arch::MemoryAccess(address, mem.getSize()));
 
-        return inst.addSymbolicExpression(se);
+        return this->addSymbolicExpressions(inst, id);
       }
 
 
@@ -1070,20 +1099,29 @@ namespace triton {
 
       /* Returns the new symbolic register expression */
       const SharedSymbolicExpression& SymbolicEngine::createSymbolicRegisterExpression(triton::arch::Instruction& inst, const triton::ast::SharedAbstractNode& node, const triton::arch::Register& reg, const std::string& comment) {
+        triton::usize id = this->uniqueSymExprId;
         SharedSymbolicExpression se = nullptr;
 
-        se = this->newSymbolicExpression(this->insertSubRegisterInParent(reg, node), REGISTER_EXPRESSION, comment);
+        std::stringstream s;
+        s << comment << (comment.empty() ? "" : " - ") << inst;
+
+        se = this->newSymbolicExpression(this->insertSubRegisterInParent(reg, node), REGISTER_EXPRESSION, s.str());
         this->assignSymbolicExpressionToRegister(se, this->architecture->getParentRegister(reg));
 
         inst.setWrittenRegister(reg, node);
-        return inst.addSymbolicExpression(se);
+        return this->addSymbolicExpressions(inst, id);
       }
 
 
       /* Returns the new symbolic volatile expression */
       const SharedSymbolicExpression& SymbolicEngine::createSymbolicVolatileExpression(triton::arch::Instruction& inst, const triton::ast::SharedAbstractNode& node, const std::string& comment) {
-        const SharedSymbolicExpression& se = this->newSymbolicExpression(node, VOLATILE_EXPRESSION, comment);
-        return inst.addSymbolicExpression(se);
+        triton::usize id = this->uniqueSymExprId;
+
+        std::stringstream s;
+        s << comment << (comment.empty() ? "" : " - ") << inst;
+
+        const SharedSymbolicExpression& se = this->newSymbolicExpression(node, VOLATILE_EXPRESSION, s.str());
+        return this->addSymbolicExpressions(inst, id);
       }
 
 
@@ -1221,7 +1259,6 @@ namespace triton {
           const triton::arch::Register& base  = mem.getConstBaseRegister();
           const triton::arch::Register& index = mem.getConstIndexRegister();
           const triton::arch::Register& seg   = mem.getConstSegmentRegister();
-          triton::uint64 segmentValue         = (this->architecture->isRegisterValid(seg) ? this->architecture->getConcreteRegisterValue(seg).convert_to<triton::uint64>() : 0);
           triton::uint64 scaleValue           = mem.getConstScale().getValue();
           triton::uint64 dispValue            = mem.getConstDisplacement().getValue();
           triton::uint32 bitSize              = (this->architecture->isRegisterValid(base) ? base.getBitSize() :
@@ -1231,7 +1268,6 @@ namespace triton {
                                                     )
                                                   )
                                                 );
-
 
           /* Initialize the AST of the memory access (LEA) -> ((pc + base) + (index * scale) + disp) */
           auto pcPlusBaseAst    = mem.getPcRelative() ? this->astCtxt->bv(mem.getPcRelative(), bitSize) :
@@ -1250,9 +1286,9 @@ namespace triton {
                                   );
 
           /* Use segments as base address instead of selector into the GDT. */
-          if (segmentValue) {
+          if (this->architecture->isRegisterValid(seg)) {
             leaAst = this->astCtxt->bvadd(
-                       this->astCtxt->bv(segmentValue, seg.getBitSize()),
+                       this->getRegisterAst(seg),
                        this->astCtxt->sx((seg.getBitSize() - bitSize), leaAst)
                      );
           }

@@ -253,6 +253,9 @@ e.g: `((_ zero_extend sizeExt) node1)`.
 \section AstContext_convert_py_api Python API - Utility methods of the AstContext class
 <hr>
 
+- <b>\ref py_AstNode_page dereference(\ref py_AstNode_page node)</b><br>
+Returns the first non referene node encountered.
+
 - <b>\ref py_AstNode_page duplicate(\ref py_AstNode_page node)</b><br>
 Duplicates the node and returns a new instance as \ref py_AstNode_page.
 
@@ -1087,6 +1090,19 @@ namespace triton {
       }
 
 
+      static PyObject* AstContext_dereference(PyObject* self, PyObject* node) {
+        if (!PyAstNode_Check(node))
+          return PyErr_Format(PyExc_TypeError, "dereference(): Expects a AstNode as argument.");
+
+        try {
+          return PyAstNode(triton::ast::dereference(PyAstNode_AsAstNode(node)));
+        }
+        catch (const triton::exceptions::Exception& e) {
+          return PyErr_Format(PyExc_TypeError, "%s", e.what());
+        }
+      }
+
+
       static PyObject* AstContext_distinct(PyObject* self, PyObject* args) {
         PyObject* op1 = nullptr;
         PyObject* op2 = nullptr;
@@ -1116,8 +1132,9 @@ namespace triton {
           return PyErr_Format(PyExc_TypeError, "duplicate(): expected a AstNode as argument");
 
         try {
-          return PyAstNode(triton::ast::newInstance(PyAstNode_AsAstNode(node).get()));
+          return PyAstNode(triton::ast::newInstance(PyAstNode_AsAstNode(node).get(), true));
         }
+
         catch (const triton::exceptions::Exception& e) {
           return PyErr_Format(PyExc_TypeError, "%s", e.what());
         }
@@ -1690,6 +1707,7 @@ namespace triton {
         {"compound",        AstContext_compound,        METH_O,           ""},
         {"concat",          AstContext_concat,          METH_O,           ""},
         {"declare",         AstContext_declare,         METH_O,           ""},
+        {"dereference",     AstContext_dereference,     METH_O,           ""},
         {"distinct",        AstContext_distinct,        METH_VARARGS,     ""},
         {"duplicate",       AstContext_duplicate,       METH_O,           ""},
         {"equal",           AstContext_equal,           METH_VARARGS,     ""},
@@ -1766,14 +1784,16 @@ namespace triton {
         0,                                          /* tp_weaklist */
         0,                                          /* tp_del */
         #if IS_PY3
-        0,                                          /* tp_version_tag */
-        0,                                          /* tp_finalize */
-        #if IS_PY3_8
-        0,                                          /* tp_vectorcall */
-        0,                                          /* bpo-37250: kept for backwards compatibility in CPython 3.8 only */
-        #endif
+          0,                                        /* tp_version_tag */
+          0,                                        /* tp_finalize */
+          #if IS_PY3_8
+            0,                                      /* tp_vectorcall */
+            #if !IS_PY3_9
+              0,                                    /* bpo-37250: kept for backwards compatibility in CPython 3.8 only */
+            #endif
+          #endif
         #else
-        0                                           /* tp_version_tag */
+          0                                         /* tp_version_tag */
         #endif
       };
 

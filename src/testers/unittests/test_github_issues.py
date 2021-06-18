@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # coding: utf-8
 """Issue from Github."""
 
@@ -41,11 +41,11 @@ class TestIssue656(unittest.TestCase):
 
     def test_issue(self):
         e = self.sym_exec_gadget((b'\x89\xd8', b'\xc2\x04\x00'))
-        self.assertEqual(str(e), '(define-fun ref!15 () (_ BitVec 64) ((_ zero_extend 32) ((_ extract 31 0) ref!1))) ; MOV operation')
+        self.assertEqual(str(e), '(define-fun ref!15 () (_ BitVec 64) ((_ zero_extend 32) ((_ extract 31 0) ref!1))) ; MOV operation - 0x0: mov eax, ebx')
         a = e.getAst()
         self.assertEqual(str(a + 1), '(bvadd ((_ zero_extend 32) ((_ extract 31 0) ref!1)) (_ bv1 64))')
         self.assertEqual(str(1 + a), '(bvadd (_ bv1 64) ((_ zero_extend 32) ((_ extract 31 0) ref!1)))')
-        self.assertEqual(str(e.getComment()), 'MOV operation')
+        self.assertEqual(str(e.getComment()), 'MOV operation - 0x0: mov eax, ebx')
         self.assertEqual(e.getId(), 15)
         self.assertEqual(str(e.getAst()), str(e.getNewAst()))
         self.assertEqual(str(e.getOrigin()), 'rax:64 bv[63..0]')
@@ -224,8 +224,8 @@ class TestIssue789(unittest.TestCase):
 
 
     def test_issue(self):
-        self.ctx.addCallback(self.handle_mem_read, CALLBACK.GET_CONCRETE_MEMORY_VALUE)
-        self.ctx.addCallback(self.handle_reg_read, CALLBACK.GET_CONCRETE_REGISTER_VALUE)
+        self.ctx.addCallback(CALLBACK.GET_CONCRETE_MEMORY_VALUE, self.handle_mem_read)
+        self.ctx.addCallback(CALLBACK.GET_CONCRETE_REGISTER_VALUE, self.handle_reg_read)
         self.emulate(0x400000)
         ast = self.ctx.getAstContext()
         rax = self.ctx.getSymbolicRegister(self.ctx.registers.rax)
@@ -344,9 +344,10 @@ class TestIssue818(unittest.TestCase):
         self.ctx.processing(inst)
 
         ref1 = self.ctx.getSymbolicExpression(2) # res of 'inc rax'
-        m = self.ctx.getModel(ref1.getAst() == 0xdead)
+        m, status = self.ctx.getModel(ref1.getAst() == 0xdead, status=True)
         self.assertEqual(m[0].getValue(), 0xac)
         self.assertEqual(m[1].getValue(), 0xde)
+        self.assertEqual(status, SOLVER.SAT)
 
 
 class TestIssue823(unittest.TestCase):
@@ -469,3 +470,23 @@ class TestIssue945(unittest.TestCase):
 
         self.assertEqual(self.inst1.isControlFlow(), False)
         self.assertEqual(self.inst2.isControlFlow(), True)
+
+
+class TestIssue992(unittest.TestCase):
+    """Testing #992."""
+
+    def push_stack_value(self, value):
+        esp = self.ctx.getConcreteRegisterValue(self.ctx.registers.esp)
+        self.ctx.setConcreteMemoryValue(MemoryAccess(esp, self.ctx.getGprSize()), value)
+
+    def setUp(self):
+        self.ctx = TritonContext(ARCH.X86)
+        self.push_stack_value(0xdeadbeef)
+        self.inst = Instruction(b'\x8F\x05\x48\x31\x24\x00') # pop dword ptr [0x243148]
+
+    def test_issue(self):
+        mem = MemoryAccess(0x243148, CPUSIZE.DWORD)
+
+        self.assertEqual(self.ctx.getConcreteMemoryValue(mem), 0)
+        self.ctx.processing(self.inst)
+        self.assertEqual(self.ctx.getConcreteMemoryValue(mem), 0xdeadbeef)
